@@ -2,17 +2,24 @@ package kv
 
 import (
 	"encoding/json"
+	"errors"
 )
 
 type SearchResult int
-
 const (
 	None SearchResult = iota
-
 	Deleted 
-
 	Success
 )
+
+var (
+	ValueMarshalErr = errors.New("kv's value ,json Marshal fatal")
+	ValueUnmarshalErr = errors.New("kv's value ,json Unmarshal fatal")
+
+	KVMarshalErr = errors.New("kv Marshal fatal")
+	KVUnmarshalErr = errors.New("kv Unmarshal fatal")
+)
+
 
 // kv
 type Value struct {
