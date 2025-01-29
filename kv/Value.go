@@ -4,6 +4,16 @@ import (
 	"encoding/json"
 )
 
+type SearchResult int
+
+const (
+	None SearchResult = iota
+
+	Deleted 
+
+	Success
+)
+
 // kv
 type Value struct {
 	Key     string
