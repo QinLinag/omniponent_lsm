@@ -6,20 +6,20 @@ import (
 )
 
 type SearchResult int
+
 const (
 	None SearchResult = iota
-	Deleted 
+	Deleted
 	Success
 )
 
 var (
-	ValueMarshalErr = errors.New("kv's value ,json Marshal fatal")
+	ValueMarshalErr   = errors.New("kv's value ,json Marshal fatal")
 	ValueUnmarshalErr = errors.New("kv's value ,json Unmarshal fatal")
 
-	KVMarshalErr = errors.New("kv Marshal fatal")
+	KVMarshalErr   = errors.New("kv Marshal fatal")
 	KVUnmarshalErr = errors.New("kv Unmarshal fatal")
 )
-
 
 // kv
 type Value struct {
@@ -28,35 +28,34 @@ type Value struct {
 	Deleted bool
 }
 
-
 func (v *Value) Copy() *Value {
 	return &Value{
-		Key: v.Key,
-		Value: v.Value,
+		Key:     v.Key,
+		Value:   v.Value,
 		Deleted: v.Deleted,
 	}
 }
 
-//反序列化kv对象value
+// 反序列化kv对象value
 func Get[T any](v *Value) (T, error) {
 	var value T
 	err := json.Unmarshal(v.Value, &value)
 	return value, err
 }
 
-//将kv对象中的value序列化
+// 将kv对象中的value序列化
 func Convert[T any](value T) ([]byte, error) {
 	return json.Marshal(value)
 }
 
-//将Value的二进制反序列化为Value对象
+// 将Value的二进制反序列化为Value对象
 func Decode(data []byte) (Value, error) {
 	var value Value
 	err := json.Unmarshal(data, &value)
 	return value, err
 }
 
-//将kv对象序列话为二进制
+// 将kv对象序列话为二进制
 func Encode(value Value) ([]byte, error) {
 	return json.Marshal(value)
 }

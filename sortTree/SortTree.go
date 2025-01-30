@@ -20,6 +20,12 @@ type Tree struct {
 	rwLock *sync.RWMutex
 }
 
+func NewSortTree() *Tree {
+	tree := Tree{}
+	tree.Init()
+	return &tree
+}
+
 func (tree *Tree) Init() {
 	tree.root = nil
 	tree.count = 0
