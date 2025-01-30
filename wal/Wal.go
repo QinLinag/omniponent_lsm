@@ -21,16 +21,20 @@ type Wal struct {
 	f *os.File
 	path string
 	lock sync.Locker
+	dir string
 }
 
 //创建wal文件
 func(w *Wal) Init(dir string) {
-	log.Println("Creating wal.log...")
-	start := time.Now()
-	defer func() {
-		elasp := time.Since(start)
-		log.Println("the wal.log has been created,and the consumption of time: ", elasp)
-	}()
+	log.Println("Creating wal.log...")	
+	walPath, f:= CreateWalFile(dir)
+	w.f = f
+	w.path = walPath
+	w.dir = dir
+	w.lock = &sync.Mutex{}
+}
+
+func CreateWalFile(dir string) (string, *os.File) {
 	uuidStr := time.Now().Format("2006-01-02-15-04-05")
 	walPath := path.Join(dir, fmt.Sprintf("%s_wal.go", uuidStr))
 
@@ -38,12 +42,46 @@ func(w *Wal) Init(dir string) {
 	if err != nil {
 		log.Println("the wal.log file can't be created")
 	}
-	w.f = f
-	w.path = walPath
-	w.lock = &sync.Mutex{}
+	return walPath, f
 }
 
+//删除原有的wal.log文件，创建一个新的wal.log文件
+func (w *Wal) Reset() {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+
+	w.DeleteFile()
+	walPath, f := CreateWalFile(w.dir)
+	w.f = f
+	w.path = walPath
+}
+
+//删除wal.log文件
+func (w *Wal) DeleteFile() {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	log.Println("Deletint wal.log file")
+	err := w.f.Close()
+	if err != nil {
+		log.Println("Failed to close wal.log file")
+		panic(err)
+	}
+
+	err = os.Remove(w.path)
+	if err != nil {
+		log.Println("Failed to remove wal.log file")
+		panic(err)
+	}
+}
+
+//加载wal.log文件到内存
 func(w *Wal) LoadFromFile(path string, tree *sortTree.Tree) *sortTree.Tree{
+	log.Println("Loading wal.log file...")
+	start := time.Now()
+	defer func() {
+		elaps := time.Since(start)
+		log.Println("wal.log file has been loaded, it spent time: ", elaps)
+	}()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Println("the wal.log file can't be open")
@@ -54,11 +92,10 @@ func(w *Wal) LoadFromFile(path string, tree *sortTree.Tree) *sortTree.Tree{
 	w.lock = &sync.Mutex{}
 	return w.LoadToMemory(tree)
 }
-
 func(w *Wal) LoadToMemory(tree *sortTree.Tree) *sortTree.Tree {
 	w.lock.Lock()
 	defer w.lock.Unlock()
-
+	
 	preTree := sortTree.NewSortTree()
 	info, _ := os.Stat(w.path)
 	size := info.Size()
@@ -127,5 +164,26 @@ func (w *Wal) Write(value kv.Value) {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 
-	
+	dataArea, err := kv.Encode(value)
+	if err != nil {
+		log.Println("Failed to marshal kv.value")
+		panic(err)
+	}
+	//将value序列话后的长度(将长度转为8个字节的int后写入)，写入wal.log中
+	dataLen := len(dataArea) 
+	err = binary.Write(w.f, binary.LittleEndian, int64(dataLen))
+	if err != nil {
+		log.Println("Failed to write value's len")
+		panic(err)
+	}
+
+	err = binary.Write(w.f, binary.LittleEndian, dataArea)
+	if err != nil {
+		log.Println("Failed to write value")
+		panic(err)
+	}
 }
+
+
+
+
