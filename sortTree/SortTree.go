@@ -38,10 +38,9 @@ func (tree *Tree) GetCount() int {
 
 func (tree *Tree) Search(key string) (kv.Value, kv.SearchResult) {
 	tree.rwLock.RLock() //读锁
-	defer tree.rwLock.Unlock()
+	defer tree.rwLock.RUnlock()
 
-	if tree == nil {
-		log.Fatal("tree is nil")
+	if tree.root == nil {
 		return kv.Value{}, kv.None
 	}
 	//排序树查找
@@ -161,7 +160,7 @@ func (tree *Tree) Delete(key string) (kv.Value, bool) {
 
 func (tree *Tree) GetValues() []kv.Value {
 	tree.rwLock.RLock()
-	defer tree.rwLock.Lock()
+	defer tree.rwLock.RUnlock()
 
 	//利用非递归方式
 	stack := InitialStack(tree.count / 2)
