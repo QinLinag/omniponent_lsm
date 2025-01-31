@@ -12,7 +12,15 @@ const (
 	Deleted
 	Success
 )
-
+func IsDeleted(result SearchResult) bool{
+	return result == Deleted
+}
+func IsSuccess(result SearchResult) bool{
+	return result == Success
+}
+func IsNone(result SearchResult) bool{
+	return result == None
+}
 var (
 	ValueMarshalErr   = errors.New("kv's value ,json Marshal fatal")
 	ValueUnmarshalErr = errors.New("kv's value ,json Unmarshal fatal")
