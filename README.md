@@ -6,6 +6,8 @@ a lsm, write by goland
         search：从sstable对应的磁盘文件中找一个kv.value
         loadMetaInfo：从磁盘文件中读取文件元信息
         loadSparseIndex：从磁盘文件中读取kv.value的所有索引信息
+        NewSSTableWithValues(非结构体专有)：根据values创建一个新的sstable内存对象以及磁盘文件
+        
         
 
 2️⃣tableNode封装了sstable--->>>一个链表，代表一层

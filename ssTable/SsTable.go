@@ -1,12 +1,15 @@
 package ssTable
 
 import (
-	"log"
-	"os"
-	"sync"
 	"encoding/binary"
 	"encoding/json"
+	"log"
+	"os"
 	"sort"
+	"strconv"
+	"sync"
+
+	config "github.com/QinLinag/omniponent_lsm/config"
 	"github.com/QinLinag/omniponent_lsm/kv"
 )
 
@@ -24,12 +27,12 @@ type SSTable struct {
 	sortIndex []string
 
 	//sstable 虽然不需要修改，但是有合并的过程，所以需要加锁
-	lock sync.Locker
+	lock *sync.RWMutex
 }
 
 func (table *SSTable) Init(path string) {
 	table.filePath = path
-	table.lock = &sync.Mutex{}
+	table.lock = &sync.RWMutex{}
 	table.loadFileHandle()
 }
 
@@ -123,8 +126,8 @@ func (table *SSTable) loadMetainfo() {
 
 //从sstable中找到 kv.value对象
 func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
-	table.lock.Lock()
-	defer table.lock.Unlock()
+	table.lock.RLock()
+	defer table.lock.RUnlock()
 
 	position, has := table.sparseIndex[key]
 	if !has {
@@ -156,7 +159,7 @@ func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
 
 
 //根据values创建一个新的sstable内存对象以及磁盘文件
-func NewSSTableWithValues(values []kv.Value, filePath string) *SSTable {
+func NewSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
 	//文件数据准备（序列化数据区、索引数据、元数据）
 	values_bytes := make([]byte, 0)
 	positions := make(map[string]Position)
@@ -175,9 +178,8 @@ func NewSSTableWithValues(values []kv.Value, filePath string) *SSTable {
 			Deleted: value.Deleted,
 		}
 		positions[value.Key] = position
-
-		dataLen += int64(len(bytes))
 		values_bytes = append(values_bytes, bytes...)
+		dataLen += int64(len(bytes))
 	}
 	sort.Strings(keys)
 	positions_bytes, err := json.Marshal(positions)
@@ -194,6 +196,7 @@ func NewSSTableWithValues(values []kv.Value, filePath string) *SSTable {
 	}
 
 	//创建文件，并且写入数据   其中呢数据区、索引区数据直接序列化写入，元数据区通过二进制写入
+	filePath := config.GetConfig().DataDir + "/" + strconv.Itoa(level) + "." + strconv.Itoa(index) + ".db"
 	f, err:= os.OpenFile(filePath, os.O_WRONLY | os.O_CREATE, 0666)
 	if err != nil {
 		NewSSTableWithValuesErrHandler(err)
@@ -222,7 +225,7 @@ func NewSSTableWithValues(values []kv.Value, filePath string) *SSTable {
 		filePath: filePath,
 		sparseIndex: positions,
 		sortIndex:keys,
-		lock: &sync.Mutex{},
+		lock: &sync.RWMutex{},
 	}
 	return &newSSTable
 }
