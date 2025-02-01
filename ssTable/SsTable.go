@@ -33,40 +33,9 @@ func (table *SSTable) Init(path string) {
 	table.loadFileHandle()
 }
 
-//从sstable中找到 kv.value对象
-func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
-	table.lock.Lock()
-	defer table.lock.Unlock()
-
-	position, has := table.sparseIndex[key]
-	if !has {
-		return kv.Value{}, kv.None
-	} 
-	if position.Deleted {
-		return kv.Value{}, kv.Deleted
-	}
-
-
-	//从磁盘中读出单个kv.value序列话的对象，然后反序列化为kv.value
-	bytes := make([]byte, position.Len)
-	_, err := table.f.Seek(position.Start, 0)
-	if err != nil {
-		log.Println("Failed to Search SSTable!", table.filePath)
-		panic(err)
-	}
-
-	_, err = table.f.Read(bytes)
-	if err != nil {
-		log.Println("Failed to Search SSTable!", table.filePath)
-		panic(err)
-	}
-
-	value, err := kv.Decode(bytes)
-	if err != nil {
-		log.Println("Failed to Search SSTable!", table.filePath)
-		panic(err)
-	}
-	return value, kv.Success
+func loadMetainfoHandler(err error, file string) {
+	log.Println("Failed to load meta info! ", file)
+	panic(err)
 }
 
 func (table *SSTable) loadFileHandle() {
@@ -112,7 +81,6 @@ func (table *SSTable) loadSparseIndex() {
 	sort.Strings(table.sortIndex)
 }
 
-
 func (table *SSTable) loadMetainfo() {
 	f := table.f
 	_, err := f.Seek(0, 0)
@@ -153,7 +121,112 @@ func (table *SSTable) loadMetainfo() {
 	binary.Read(f, binary.LittleEndian, table.tableMetaInfo.indexLen)
 }
 
-func loadMetainfoHandler(err error, file string) {
-	log.Println("Failed to load meta info! ", file)
+//从sstable中找到 kv.value对象
+func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
+	table.lock.Lock()
+	defer table.lock.Unlock()
+
+	position, has := table.sparseIndex[key]
+	if !has {
+		return kv.Value{}, kv.None
+	} 
+	if position.Deleted {
+		return kv.Value{}, kv.Deleted
+	}
+
+
+	//从磁盘中读出单个kv.value序列话的对象，然后反序列化为kv.value
+	bytes := make([]byte, position.Len)
+	_, err := table.f.Seek(position.Start, 0)
+	if err != nil {
+		NewSSTableWithValuesErrHandler(err)
+	}
+
+	_, err = table.f.Read(bytes)
+	if err != nil {
+		NewSSTableWithValuesErrHandler(err)
+	}
+
+	value, err := kv.Decode(bytes)
+	if err != nil {
+		NewSSTableWithValuesErrHandler(err)
+	}
+	return value, kv.Success
+}
+
+
+//根据values创建一个新的sstable内存对象以及磁盘文件
+func NewSSTableWithValues(values []kv.Value, filePath string) *SSTable {
+	//文件数据准备（序列化数据区、索引数据、元数据）
+	values_bytes := make([]byte, 0)
+	positions := make(map[string]Position)
+	keys := make([]string, 0)
+	dataLen := int64(0)
+	for _, value := range values {
+		bytes, err := kv.Encode(value)
+		if err != nil {
+			log.Println("Failed to insert key: ", value.Key)
+			continue
+		}
+		keys = append(keys, value.Key)
+		position := Position{
+			Start: dataLen,
+			Len: int64(len(bytes)),
+			Deleted: value.Deleted,
+		}
+		positions[value.Key] = position
+
+		dataLen += int64(len(bytes))
+		values_bytes = append(values_bytes, bytes...)
+	}
+	sort.Strings(keys)
+	positions_bytes, err := json.Marshal(positions)
+	if err != nil {
+		NewSSTableWithValuesErrHandler(err)
+	}
+	
+	meta := MetaInfo{ //meta不需要序列化，字节binary写入
+		version: 0,
+		dataStart: 0,
+		dataLen: dataLen,
+		indexStart: dataLen,
+		indexLen: int64(len(positions_bytes)),
+	}
+
+	//创建文件，并且写入数据   其中呢数据区、索引区数据直接序列化写入，元数据区通过二进制写入
+	f, err:= os.OpenFile(filePath, os.O_WRONLY | os.O_CREATE, 0666)
+	if err != nil {
+		NewSSTableWithValuesErrHandler(err)
+	}
+	
+	_, err = f.Write(values_bytes)
+	if err != nil {
+		NewSSTableWithValuesErrHandler(err)
+	}
+	_, err = f.Write(positions_bytes)
+	if err != nil {
+		NewSSTableWithValuesErrHandler(err)
+	}
+	binary.Write(f, binary.LittleEndian, &meta.version)
+	binary.Write(f, binary.LittleEndian, &meta.dataStart)
+	binary.Write(f, binary.LittleEndian, &meta.dataLen)
+	binary.Write(f, binary.LittleEndian, &meta.indexStart)
+	binary.Write(f, binary.LittleEndian, &meta.indexLen)
+	err = f.Sync()
+	if err != nil {
+		NewSSTableWithValuesErrHandler(err)
+	}
+	newSSTable := SSTable{
+		f: f,
+		tableMetaInfo: meta,
+		filePath: filePath,
+		sparseIndex: positions,
+		sortIndex:keys,
+		lock: &sync.Mutex{},
+	}
+	return &newSSTable
+}
+func NewSSTableWithValuesErrHandler(err error) {
+	log.Println("Failed to NewSSTable!")
 	panic(err)
 }
