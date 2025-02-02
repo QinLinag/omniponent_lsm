@@ -3,6 +3,8 @@ package ssTable
 import (
 	"log"
 	"os"
+	"path"
+	"sort"
 	"sync"
 	"time"
 
@@ -20,10 +22,52 @@ var levelMaxSize []int
 
 
 /*
-TableTree初始化
+TableTree初始化模块
 */
 func (tree *TableTree) Init(dir string) {
+	log.Println("The SSTable list are being loaded")
+	con := config.GetConfig()
+	con.DataDir = dir
+	//目前tabletree最多十层，每一层的所有数据比上一层大10倍，
+	levelMaxSize = make([]int, 10)
+	levelMaxSize[0] = con.Level0Size
+	levelMaxSize[1] = levelMaxSize[0] * 10
+	levelMaxSize[2] = levelMaxSize[1] * 10
+	levelMaxSize[3] = levelMaxSize[2] * 10
+	levelMaxSize[4] = levelMaxSize[3] * 10
+	levelMaxSize[5] = levelMaxSize[4] * 10
+	levelMaxSize[6] = levelMaxSize[5] * 10
+	levelMaxSize[7] = levelMaxSize[6] * 10
+	levelMaxSize[8] = levelMaxSize[7] * 10
+	levelMaxSize[9] = levelMaxSize[8] * 10
 
+	tree.levels = make([]*tableNode, 10)
+	tree.lock = &sync.RWMutex{}
+	infos, err := os.ReadDir(dir)
+	if err != nil {
+		log.Println("Failed to init tableTree, and the diractory is: ", dir)
+		panic(err)
+	}
+
+	files := make([]string, len(infos))
+	for i, info := range infos {
+		files[i] = info.Name()
+	}
+	sort.Strings(files)
+	for _, fileName := range files {
+		if path.Ext(fileName) == ".db" {
+			tree.loadDbFile(dir, fileName)
+		}
+	}
+}
+func(tree *TableTree) loadDbFile(dir string, fileName string) {
+	table := NewSSTableFromFile(path.Join(dir, fileName))
+	level, _, err := getLevelAndIndex(fileName)
+	if err!= nil {
+		log.Println("Failed to init tableTree, and the diractory is: ", dir)
+		panic(err)
+	}
+	tree.insert(table, level)
 }
 
 
@@ -54,54 +98,6 @@ func (tree *TableTree) Search(key string) (kv.Value, kv.SearchResult) {
 	return kv.Value{}, kv.None
 }
 
-
-
-//获得某层最大index
-func (tree *TableTree) getMaxIndexFromCertainLevel(level int) int {
-	tree.lock.RLock()
-	defer tree.lock.Unlock()
-	if level>= len(tree.levels) { //非法层
-		return -1 
-	}
-	node := tree.levels[level]
-	index := 0
-	for node != nil {
-		index = node.index
-		node = node.next
-	}
-	return index
-}
-//获得某层节点数
-func (tree *TableTree) getCountFromCertainLevel(level int) int {
-	tree.lock.RLock()
-	defer tree.lock.Unlock()
-	if level>= len(tree.levels) { //非法层
-		return -1 
-	}
-	node := tree.levels[level]
-	count := 0
-
-	for node != nil {
-		count++
-		node = node.next
-	}
-	return count
-}
-//获得某层所有sstable磁盘文件大小总和
-func (tree *TableTree) getLevelSize(level int) int64 {
-	if level > len(tree.levels) { //非法level
-		return -1
-	}
-	tree.lock.RLock()
-	defer tree.lock.RUnlock()
-	node := tree.levels[level]
-	size := int64(0)
-	for node != nil {
-		size += node.table.getSSTableSize()
-		node = node.next
-	}
-	return size
-}
 
 
 /*
@@ -150,7 +146,9 @@ func (tree *TableTree) insert(table *SSTable, level int) int {
 /* 
 文件压缩模块   一层一层压缩至下一层
 */
-
+func (tree *TableTree) Check() {
+	tree.majorCompaction()
+}
 //循环便利每一层，判断是否需要压缩
 func (tree *TableTree) majorCompaction() {
 	tree.lock.Lock()
@@ -163,7 +161,6 @@ func (tree *TableTree) majorCompaction() {
 		}
 	}
 }
-
 //对某一层进行压缩
 func(tree *TableTree) compactionCertainLevel(level int) {
 	log.Println("Compressing start,level: ", level)
@@ -229,7 +226,6 @@ func(tree *TableTree) compactionCertainLevel(level int) {
 		tree.clearLevel(oldNode)
 	}
 }
-
 //重置某个tableNode及其以后node节点（删除node、sstable、磁盘文件）
 func(tree *TableTree) clearLevel(node *tableNode) {
 	tree.lock.Lock()
@@ -250,6 +246,59 @@ func(tree *TableTree) clearLevel(node *tableNode) {
 		node.table = nil
 		node = node.next
 	}
+}
+
+
+
+
+/*
+tableTree 功能接口
+*/
+//获得某层最大index
+func (tree *TableTree) getMaxIndexFromCertainLevel(level int) int {
+	tree.lock.RLock()
+	defer tree.lock.Unlock()
+	if level>= len(tree.levels) { //非法层
+		return -1 
+	}
+	node := tree.levels[level]
+	index := 0
+	for node != nil {
+		index = node.index
+		node = node.next
+	}
+	return index
+}
+//获得某层节点数
+func (tree *TableTree) getCountFromCertainLevel(level int) int {
+	tree.lock.RLock()
+	defer tree.lock.Unlock()
+	if level>= len(tree.levels) { //非法层
+		return -1 
+	}
+	node := tree.levels[level]
+	count := 0
+
+	for node != nil {
+		count++
+		node = node.next
+	}
+	return count
+}
+//获得某层所有sstable磁盘文件大小总和
+func (tree *TableTree) getLevelSize(level int) int64 {
+	if level > len(tree.levels) { //非法level
+		return -1
+	}
+	tree.lock.RLock()
+	defer tree.lock.RUnlock()
+	node := tree.levels[level]
+	size := int64(0)
+	for node != nil {
+		size += node.table.getSSTableSize()
+		node = node.next
+	}
+	return size
 }
 
 

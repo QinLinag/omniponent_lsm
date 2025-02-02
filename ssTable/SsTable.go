@@ -29,12 +29,10 @@ type SSTable struct {
 	lock *sync.RWMutex
 }
 
-func (table *SSTable) Init(path string) {
-	table.filePath = path
-	table.lock = &sync.RWMutex{}
-	table.loadFileHandle()
-}
 
+/*
+功能接口模块
+*/
 // 获得sstable磁盘文件的总大小
 func (table *SSTable) getSSTableSize() int64 {
 	table.lock.RLock()
@@ -47,14 +45,20 @@ func (table *SSTable) getSSTableSize() int64 {
 	return info.Size()
 }
 
+
 /*
 磁盘sstable文件信息加载如内存sstable对象模块
 */
-func loadMetainfoHandler(err error, file string) {
-	log.Println("Failed to load meta info! ", file)
-	panic(err)
+func NewSSTableFromFile(path string) *SSTable{
+	table := SSTable{}
+	table.Init(path)
+	return &table
 }
-
+func (table *SSTable) Init(path string) {
+	table.filePath = path
+	table.lock = &sync.RWMutex{}
+	table.loadFileHandle()
+}
 func (table *SSTable) loadFileHandle() {
 	if table.f == nil {
 		f, err := os.OpenFile(table.filePath, os.O_RDONLY, 0666)
@@ -68,7 +72,6 @@ func (table *SSTable) loadFileHandle() {
 	table.loadMetainfo()
 	table.loadSparseIndex()
 }
-
 func (table *SSTable) loadSparseIndex() {
 	f := table.f
 	bytes := make([]byte, table.tableMetaInfo.indexLen)
@@ -137,7 +140,15 @@ func (table *SSTable) loadMetainfo() {
 	}
 	binary.Read(f, binary.LittleEndian, table.tableMetaInfo.indexLen)
 }
+func loadMetainfoHandler(err error, file string) {
+	log.Println("Failed to load meta info! ", file)
+	panic(err)
+}
 
+
+/*
+搜索sstable模块
+*/
 // 从sstable中找到 kv.value对象
 func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
 	table.lock.RLock()
@@ -170,6 +181,11 @@ func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
 	return value, kv.Success
 }
 
+
+
+/*
+创建sstable并写入磁盘文件模块
+*/
 // 根据values创建一个新的sstable内存对象以及磁盘文件
 func NewSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
 	//文件数据准备（序列化数据区、索引数据、元数据）
