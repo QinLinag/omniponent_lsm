@@ -13,9 +13,8 @@ import (
 	"github.com/QinLinag/omniponent_lsm/kv"
 )
 
-
 type SSTable struct {
-	f *os.File
+	f        *os.File
 	filePath string
 
 	tableMetaInfo MetaInfo
@@ -36,6 +35,21 @@ func (table *SSTable) Init(path string) {
 	table.loadFileHandle()
 }
 
+// 获得sstable磁盘文件的总大小
+func (table *SSTable) getSSTableSize() int64 {
+	table.lock.RLock()
+	defer table.lock.RUnlock()
+	info, err := table.f.Stat()
+	if err != nil {
+		log.Println("Failed to get SSTable size!")
+		panic(err)
+	}
+	return info.Size()
+}
+
+/*
+磁盘sstable文件信息加载如内存sstable对象模块
+*/
 func loadMetainfoHandler(err error, file string) {
 	log.Println("Failed to load meta info! ", file)
 	panic(err)
@@ -50,7 +64,7 @@ func (table *SSTable) loadFileHandle() {
 		}
 		table.f = f
 	}
-	
+
 	table.loadMetainfo()
 	table.loadSparseIndex()
 }
@@ -58,7 +72,7 @@ func (table *SSTable) loadFileHandle() {
 func (table *SSTable) loadSparseIndex() {
 	f := table.f
 	bytes := make([]byte, table.tableMetaInfo.indexLen)
-	_, err := f.Seek(table.tableMetaInfo.indexStart,0)
+	_, err := f.Seek(table.tableMetaInfo.indexStart, 0)
 	if err != nil {
 		log.Println("Failed to load sparseIndex! ", table.filePath)
 		panic(err)
@@ -124,7 +138,7 @@ func (table *SSTable) loadMetainfo() {
 	binary.Read(f, binary.LittleEndian, table.tableMetaInfo.indexLen)
 }
 
-//从sstable中找到 kv.value对象
+// 从sstable中找到 kv.value对象
 func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
 	table.lock.RLock()
 	defer table.lock.RUnlock()
@@ -132,11 +146,10 @@ func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
 	position, has := table.sparseIndex[key]
 	if !has {
 		return kv.Value{}, kv.None
-	} 
+	}
 	if position.Deleted {
 		return kv.Value{}, kv.Deleted
 	}
-
 
 	//从磁盘中读出单个kv.value序列话的对象，然后反序列化为kv.value
 	bytes := make([]byte, position.Len)
@@ -157,8 +170,7 @@ func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
 	return value, kv.Success
 }
 
-
-//根据values创建一个新的sstable内存对象以及磁盘文件
+// 根据values创建一个新的sstable内存对象以及磁盘文件
 func NewSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
 	//文件数据准备（序列化数据区、索引数据、元数据）
 	values_bytes := make([]byte, 0)
@@ -173,8 +185,8 @@ func NewSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
 		}
 		keys = append(keys, value.Key)
 		position := Position{
-			Start: dataLen,
-			Len: int64(len(bytes)),
+			Start:   dataLen,
+			Len:     int64(len(bytes)),
 			Deleted: value.Deleted,
 		}
 		positions[value.Key] = position
@@ -186,22 +198,22 @@ func NewSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
 	if err != nil {
 		NewSSTableWithValuesErrHandler(err)
 	}
-	
+
 	meta := MetaInfo{ //meta不需要序列化，字节binary写入
-		version: 0,
-		dataStart: 0,
-		dataLen: dataLen,
+		version:    0,
+		dataStart:  0,
+		dataLen:    dataLen,
 		indexStart: dataLen,
-		indexLen: int64(len(positions_bytes)),
+		indexLen:   int64(len(positions_bytes)),
 	}
 
 	//创建文件，并且写入数据   其中呢数据区、索引区数据直接序列化写入，元数据区通过二进制写入
 	filePath := config.GetConfig().DataDir + "/" + strconv.Itoa(level) + "." + strconv.Itoa(index) + ".db"
-	f, err:= os.OpenFile(filePath, os.O_WRONLY | os.O_CREATE, 0666)
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		NewSSTableWithValuesErrHandler(err)
 	}
-	
+
 	_, err = f.Write(values_bytes)
 	if err != nil {
 		NewSSTableWithValuesErrHandler(err)
@@ -220,12 +232,12 @@ func NewSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
 		NewSSTableWithValuesErrHandler(err)
 	}
 	newSSTable := SSTable{
-		f: f,
+		f:             f,
 		tableMetaInfo: meta,
-		filePath: filePath,
-		sparseIndex: positions,
-		sortIndex:keys,
-		lock: &sync.RWMutex{},
+		filePath:      filePath,
+		sparseIndex:   positions,
+		sortIndex:     keys,
+		lock:          &sync.RWMutex{},
 	}
 	return &newSSTable
 }
