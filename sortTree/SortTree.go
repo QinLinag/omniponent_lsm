@@ -186,11 +186,11 @@ func (tree *Tree) Swap() *Tree {
 	tree.rwLock.Lock()
 	defer tree.rwLock.Unlock()
 
-	newTree := &Tree{}
-	newTree.Init()
+	newTree := NewSortTree()
+	newTree.root = tree.root
+	newTree.count = tree.count
 
 	tree.root = nil
 	tree.count = 0
-	tree.rwLock = nil
 	return newTree
 }

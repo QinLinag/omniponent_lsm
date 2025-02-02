@@ -10,34 +10,41 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QinLinag/omniponent_lsm/config"
 	"github.com/QinLinag/omniponent_lsm/kv"
 	"github.com/QinLinag/omniponent_lsm/sortTree"
 )
 
-
-
-
 type Wal struct {
 	f *os.File
 	path string
-	lock sync.Locker
+	lock *sync.Mutex
 	dir string
 }
 
-//创建wal文件
-func(w *Wal) Init(dir string) {
+
+
+/*
+创建wal文件
+*/
+func NewWal(tree *sortTree.Tree) *Wal{
+	conf := config.GetConfig()
+	dir := conf.DataDir
+	wal := Wal{}
+	wal.lock = &sync.Mutex{}
+	wal.dir = dir
+	wal.CreateWal(dir)  //没有log文件，创建新的
+	return &wal
+}
+func(w *Wal) CreateWal(dir string) {
 	log.Println("Creating wal.log...")	
-	walPath, f:= CreateWalFile(dir)
+	walPath, f:= CreateNewWalFileHandler(dir)
 	w.f = f
 	w.path = walPath
-	w.dir = dir
-	w.lock = &sync.Mutex{}
 }
-
-func CreateWalFile(dir string) (string, *os.File) {
+func CreateNewWalFileHandler(dir string) (string, *os.File) {
 	uuidStr := time.Now().Format("2006-01-02-15-04-05")
 	walPath := path.Join(dir, fmt.Sprintf("%s_wal.go", uuidStr))
-
 	f, err := os.OpenFile(walPath, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
 		log.Println("the wal.log file can't be created")
@@ -45,54 +52,31 @@ func CreateWalFile(dir string) (string, *os.File) {
 	return walPath, f
 }
 
-//删除原有的wal.log文件，创建一个新的wal.log文件
-func (w *Wal) Reset() {
-	w.lock.Lock()
-	defer w.lock.Unlock()
 
-	w.DeleteFile()
-	walPath, f := CreateWalFile(w.dir)
-	w.f = f
-	w.path = walPath
-}
 
-//删除wal.log文件
-func (w *Wal) DeleteFile() {
-	w.lock.Lock()
-	defer w.lock.Unlock()
-	log.Println("Deletint wal.log file")
-	err := w.f.Close()
-	if err != nil {
-		log.Println("Failed to close wal.log file")
-		panic(err)
-	}
-
-	err = os.Remove(w.path)
-	if err != nil {
-		log.Println("Failed to remove wal.log file")
-		panic(err)
-	}
-}
-
-//加载wal.log文件到内存
-func(w *Wal) LoadFromFile(path string, tree *sortTree.Tree) *sortTree.Tree{
+/*
+加载wal.log文件到内存
+*/
+func(w *Wal) LoadFromFile(path string) *sortTree.Tree{
 	log.Println("Loading wal.log file...")
 	start := time.Now()
 	defer func() {
 		elaps := time.Since(start)
 		log.Println("wal.log file has been loaded, it spent time: ", elaps)
 	}()
+
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Println("the wal.log file can't be open")
 	}
-
+	conf := config.GetConfig()
+	w.dir = conf.DataDir
 	w.f = f
 	w.path = path
 	w.lock = &sync.Mutex{}
-	return w.LoadToMemory(tree)
+	return w.LoadToMemory()
 }
-func(w *Wal) LoadToMemory(tree *sortTree.Tree) *sortTree.Tree {
+func(w *Wal) LoadToMemory() *sortTree.Tree {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	
@@ -147,11 +131,9 @@ func(w *Wal) LoadToMemory(tree *sortTree.Tree) *sortTree.Tree {
 			panic(err)
 		}
 
-		if value.Deleted {
-			tree.Delete(value.Key)
+		if value.Deleted {  //越往后面，数据时越新的，就要删除
 			preTree.Delete(value.Key)
 		} else {
-			tree.Insert(&value)
 			preTree.Insert(&value)
 		}
 		index += dataLen
@@ -159,7 +141,9 @@ func(w *Wal) LoadToMemory(tree *sortTree.Tree) *sortTree.Tree {
 	return preTree
 }
 
-//记录日志
+/*
+记录日志
+*/
 func (w *Wal) Write(value kv.Value) {
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -185,5 +169,36 @@ func (w *Wal) Write(value kv.Value) {
 }
 
 
+/*
+删除原有的wal.log文件，创建一个新的wal.log文件
+*/
+func (w *Wal) Reset() {
+	w.lock.Lock()
+	defer w.lock.Unlock()
 
+	w.DeleteFile()
+	walPath, f := CreateNewWalFileHandler(w.dir)
+	w.f = f
+	w.path = walPath
+}
+
+/*
+删除log文件
+*/
+func (w *Wal) DeleteFile() {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	log.Println("Deletint wal.log file")
+	err := w.f.Close()
+	if err != nil {
+		log.Println("Failed to close wal.log file")
+		panic(err)
+	}
+
+	err = os.Remove(w.path)
+	if err != nil {
+		log.Println("Failed to remove wal.log file")
+		panic(err)
+	}
+}
 

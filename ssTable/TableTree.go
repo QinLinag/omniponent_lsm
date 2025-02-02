@@ -17,17 +17,22 @@ type TableTree struct {
 	levels []*tableNode
 	lock   *sync.RWMutex
 }
+
 var levelMaxSize []int
-
-
 
 /*
 TableTree初始化模块
 */
+func NewTableTree() *TableTree {
+	conf := config.GetConfig()
+	dir := conf.DataDir
+	tableTree := TableTree{}
+	tableTree.Init(dir)
+	return &tableTree
+}
 func (tree *TableTree) Init(dir string) {
 	log.Println("The SSTable list are being loaded")
 	con := config.GetConfig()
-	con.DataDir = dir
 	//目前tabletree最多十层，每一层的所有数据比上一层大10倍，
 	levelMaxSize = make([]int, 10)
 	levelMaxSize[0] = con.Level0Size
@@ -43,6 +48,7 @@ func (tree *TableTree) Init(dir string) {
 
 	tree.levels = make([]*tableNode, 10)
 	tree.lock = &sync.RWMutex{}
+	//加载sstable磁盘文件
 	infos, err := os.ReadDir(dir)
 	if err != nil {
 		log.Println("Failed to init tableTree, and the diractory is: ", dir)
@@ -60,17 +66,15 @@ func (tree *TableTree) Init(dir string) {
 		}
 	}
 }
-func(tree *TableTree) loadDbFile(dir string, fileName string) {
+func (tree *TableTree) loadDbFile(dir string, fileName string) {
 	table := NewSSTableFromFile(path.Join(dir, fileName))
 	level, _, err := getLevelAndIndex(fileName)
-	if err!= nil {
+	if err != nil {
 		log.Println("Failed to init tableTree, and the diractory is: ", dir)
 		panic(err)
 	}
 	tree.insert(table, level)
 }
-
-
 
 /*
 tableTree 搜索模块
@@ -98,8 +102,6 @@ func (tree *TableTree) Search(key string) (kv.Value, kv.SearchResult) {
 	return kv.Value{}, kv.None
 }
 
-
-
 /*
 创建tableNode并插入tableTree模块
 */
@@ -107,15 +109,17 @@ func (tree *TableTree) Search(key string) (kv.Value, kv.SearchResult) {
 func (tree *TableTree) CreateNewTable(values []kv.Value) *SSTable {
 	return tree.createTable(values, 0)
 }
-//根据values创建一个tableNode插入到Tabletree
+
+// 根据values创建一个tableNode插入到Tabletree
 func (tree *TableTree) createTable(values []kv.Value, level int) *SSTable {
 	//返回sstable内存对象
 	index := tree.getMaxIndexFromCertainLevel(level)
-	newSSTable := NewSSTableWithValues(values, level, index + 1)
+	newSSTable := NewSSTableWithValues(values, level, index+1)
 	//插入tableNode节点
 	tree.insert(newSSTable, level)
 	return newSSTable
 }
+
 // 插入一个sstable到tableTree的指定层链表最后一个位置，并返回对应的index
 func (tree *TableTree) insert(table *SSTable, level int) int {
 	tree.lock.Lock()
@@ -142,14 +146,14 @@ func (tree *TableTree) insert(table *SSTable, level int) int {
 	return newNode.index
 }
 
-
-/* 
+/*
 文件压缩模块   一层一层压缩至下一层
 */
 func (tree *TableTree) Check() {
 	tree.majorCompaction()
 }
-//循环便利每一层，判断是否需要压缩
+
+// 循环便利每一层，判断是否需要压缩
 func (tree *TableTree) majorCompaction() {
 	tree.lock.Lock()
 	defer tree.lock.Unlock()
@@ -161,8 +165,9 @@ func (tree *TableTree) majorCompaction() {
 		}
 	}
 }
-//对某一层进行压缩
-func(tree *TableTree) compactionCertainLevel(level int) {
+
+// 对某一层进行压缩：基本思路，将某一层的sstable磁盘文件加载到内存，构成一颗sortTree，然后将sortTree转化为sstable，插入下一层
+func (tree *TableTree) compactionCertainLevel(level int) {
 	log.Println("Compressing start,level: ", level)
 	start := time.Now()
 	defer func() {
@@ -201,7 +206,7 @@ func(tree *TableTree) compactionCertainLevel(level int) {
 				if err != nil {
 					log.Println("Failed to compaction, level is : ", level, "file is: ", table.filePath)
 					continue
-				}	
+				}
 				tempMemorySortTree.Insert(&value)
 			} else {
 				tempMemorySortTree.Delete(key)
@@ -226,8 +231,18 @@ func(tree *TableTree) compactionCertainLevel(level int) {
 		tree.clearLevel(oldNode)
 	}
 }
-//重置某个tableNode及其以后node节点（删除node、sstable、磁盘文件）
-func(tree *TableTree) clearLevel(node *tableNode) {
+
+/*
+清理模块、资源释放
+*/
+//清理整个tableTree
+func (tree *TableTree) clear() {
+	tree.lock.Lock()
+	defer tree.lock.Unlock()
+
+}
+// 重置某个tableNode及其以后node节点（删除node、sstable、磁盘文件）
+func (tree *TableTree) clearLevel(node *tableNode) {
 	tree.lock.Lock()
 	defer tree.lock.Unlock()
 	for node != nil {
@@ -248,9 +263,6 @@ func(tree *TableTree) clearLevel(node *tableNode) {
 	}
 }
 
-
-
-
 /*
 tableTree 功能接口
 */
@@ -258,8 +270,8 @@ tableTree 功能接口
 func (tree *TableTree) getMaxIndexFromCertainLevel(level int) int {
 	tree.lock.RLock()
 	defer tree.lock.Unlock()
-	if level>= len(tree.levels) { //非法层
-		return -1 
+	if level >= len(tree.levels) { //非法层
+		return -1
 	}
 	node := tree.levels[level]
 	index := 0
@@ -269,12 +281,13 @@ func (tree *TableTree) getMaxIndexFromCertainLevel(level int) int {
 	}
 	return index
 }
-//获得某层节点数
+
+// 获得某层节点数
 func (tree *TableTree) getCountFromCertainLevel(level int) int {
 	tree.lock.RLock()
 	defer tree.lock.Unlock()
-	if level>= len(tree.levels) { //非法层
-		return -1 
+	if level >= len(tree.levels) { //非法层
+		return -1
 	}
 	node := tree.levels[level]
 	count := 0
@@ -285,7 +298,8 @@ func (tree *TableTree) getCountFromCertainLevel(level int) int {
 	}
 	return count
 }
-//获得某层所有sstable磁盘文件大小总和
+
+// 获得某层所有sstable磁盘文件大小总和
 func (tree *TableTree) getLevelSize(level int) int64 {
 	if level > len(tree.levels) { //非法level
 		return -1
@@ -300,5 +314,3 @@ func (tree *TableTree) getLevelSize(level int) int64 {
 	}
 	return size
 }
-
-
