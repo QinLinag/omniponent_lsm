@@ -175,7 +175,7 @@ func newSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
 		newSSTableWithValuesErrHandler(err)
 	}
 
-	meta := newMetaInfo(0, 0, dataLen, dataLen, int64(len(positions_bytes)))
+	meta := newMetaInfo(dataLen, int64(len(positions_bytes)))
 
 	//创建文件，并且写入数据   其中呢数据区、索引区数据直接序列化写入，元数据区通过二进制写入
 	filePath := config.GetConfig().DataDir + "/" + strconv.Itoa(level) + "." + strconv.Itoa(index) + ".db"

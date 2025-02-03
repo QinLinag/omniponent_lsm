@@ -14,7 +14,7 @@ type MetaInfo struct {
 	indexLen int64
 }
 
-func newMetaInfo(version int64, dataStart int64, dataLen int64, indexStart int64, indexLen int64) *MetaInfo{
+func newMetaInfo(dataLen int64, indexLen int64) *MetaInfo{
 	return &MetaInfo{
 		version:    0,
 		dataStart:  0,
