@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	config "github.com/QinLinag/omniponent_lsm/config"
+	config "github.com/QinLinag/omniponent_lsm/Config"
 	"github.com/QinLinag/omniponent_lsm/kv"
 	"github.com/QinLinag/omniponent_lsm/sortTree"
 )
@@ -24,18 +24,17 @@ var levelMaxSize []int
 TableTree初始化模块
 */
 func NewTableTree() *TableTree {
-	conf := config.GetConfig()
-	dir := conf.DataDir
 	tableTree := TableTree{}
-	tableTree.Init(dir)
+	tableTree.Init()
 	return &tableTree
 }
-func (tree *TableTree) Init(dir string) {
+func (tree *TableTree) Init() {
 	log.Println("The SSTable list are being loaded")
-	con := config.GetConfig()
+	conf := config.GetConfig()
+	dir := conf.DataDir
 	//目前tabletree最多十层，每一层的所有数据比上一层大10倍，
 	levelMaxSize = make([]int, 10)
-	levelMaxSize[0] = con.Level0Size
+	levelMaxSize[0] = conf.Level0Size
 	levelMaxSize[1] = levelMaxSize[0] * 10
 	levelMaxSize[2] = levelMaxSize[1] * 10
 	levelMaxSize[3] = levelMaxSize[2] * 10
