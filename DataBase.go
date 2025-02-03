@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/QinLinag/omniponent_lsm/config"
+	config "github.com/QinLinag/omniponent_lsm/Config"
 	"github.com/QinLinag/omniponent_lsm/ssTable"
 )
 

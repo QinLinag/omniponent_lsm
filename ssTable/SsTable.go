@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"sync"
 
-	config "github.com/QinLinag/omniponent_lsm/config"
+	config "github.com/QinLinag/omniponent_lsm/Config"
 	"github.com/QinLinag/omniponent_lsm/kv"
 )
 
