@@ -26,7 +26,7 @@ a lsm, write by goland
         3.根据key，搜索value。
         4.资源释放。
     sstable磁盘文件格式：其中数据区和索引数据区序列化内存数据后写入， 元数据区通过binary二进制写入
-            
+            ![alt text](https://github.com/QinLinag/omniponent_lsm/blob/main/meta.jpg)
     2️⃣tableNode封装了sstable。tableTree的节点
 
     3️⃣tableTree用于维护多层tableNode链表
