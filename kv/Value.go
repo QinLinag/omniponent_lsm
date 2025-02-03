@@ -2,17 +2,23 @@ package kv
 
 import (
 	"encoding/json"
-	"errors"
 )
 
-type SearchResult int
 
+// kv 需要序列化，故必须大写
+type Value struct {
+	Key     string
+	Value   []byte
+	Deleted bool
+}
+
+type SearchResult int
 const (
 	None SearchResult = iota
 	Deleted
 	Success
 )
-func IsDeleted(result SearchResult) bool{
+func Isdeleted(result SearchResult) bool{
 	return result == Deleted
 }
 func IsSuccess(result SearchResult) bool{
@@ -21,21 +27,42 @@ func IsSuccess(result SearchResult) bool{
 func IsNone(result SearchResult) bool{
 	return result == None
 }
-var (
-	ValueMarshalErr   = errors.New("kv's value ,json Marshal fatal")
-	ValueUnmarshalErr = errors.New("kv's value ,json Unmarshal fatal")
 
-	KVMarshalErr   = errors.New("kv Marshal fatal")
-	KVUnmarshalErr = errors.New("kv Unmarshal fatal")
-)
 
-// kv
-type Value struct {
-	Key     string
-	Value   []byte
-	Deleted bool
+/*
+初始化模块
+*/
+func NewValue(key string, value []byte) *Value {
+	newValue := Value{
+		Key: key,
+		Value: value,
+		Deleted: false,
+	}
+	return &newValue
 }
 
+
+/*
+功能性模块
+*/
+func (v *Value) Isdeleted() bool {
+	return v.Deleted
+}
+func (v *Value) GetKey() string {
+	return v.Key
+}
+func (v *Value) GetValue() []byte {
+	return v.Value
+} 
+func (v *Value) SetValue(value []byte) {
+	v.Value = value
+}
+func (v *Value) SetDeleted(flag bool) {
+	v.Deleted = flag
+}
+func (v *Value) SetKey(key string) {
+	v.Key = key
+}
 func (v *Value) Copy() *Value {
 	return &Value{
 		Key:     v.Key,
@@ -44,6 +71,10 @@ func (v *Value) Copy() *Value {
 	}
 }
 
+
+/*
+序列化与反序列化模块
+*/
 // 反序列化kv对象value
 func Get[T any](v *Value) (T, error) {
 	var value T
@@ -56,7 +87,7 @@ func Convert[T any](value T) ([]byte, error) {
 	return json.Marshal(value)
 }
 
-// 将Value的二进制反序列化为Value对象
+// 将value的二进制反序列化为value对象
 func Decode(data []byte) (Value, error) {
 	var value Value
 	err := json.Unmarshal(data, &value)

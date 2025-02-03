@@ -16,48 +16,44 @@ import (
 )
 
 type Wal struct {
-	f *os.File
+	f    *os.File
 	path string
 	lock *sync.Mutex
-	dir string
+	dir  string
 }
 
-
-
 /*
-创建wal文件
+为内存表创建全新的wal文件、wal对象
 */
-func NewWal(tree *sortTree.Tree) *Wal{
+func NewWal(tree *sortTree.Tree) *Wal {
 	conf := config.GetConfig()
 	dir := conf.DataDir
 	wal := Wal{}
 	wal.lock = &sync.Mutex{}
 	wal.dir = dir
-	wal.CreateWal(dir)  //没有log文件，创建新的
+	wal.CreateWal(dir) //没有log文件，创建新的
 	return &wal
 }
-func(w *Wal) CreateWal(dir string) {
-	log.Println("Creating wal.log...")	
-	walPath, f:= CreateNewWalFileHandler(dir)
+func (w *Wal) CreateWal(dir string) {
+	log.Println("Creating wal.log...")
+	walPath, f := CreateNewWalFileHandler(dir)
 	w.f = f
 	w.path = walPath
 }
 func CreateNewWalFileHandler(dir string) (string, *os.File) {
 	uuidStr := time.Now().Format("2006-01-02-15-04-05")
 	walPath := path.Join(dir, fmt.Sprintf("%s_wal.go", uuidStr))
-	f, err := os.OpenFile(walPath, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	f, err := os.OpenFile(walPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Println("the wal.log file can't be created")
 	}
 	return walPath, f
 }
 
-
-
 /*
-加载wal.log文件到内存
+database启动时，加载wal.log文件到内存，初始化wal对象
 */
-func(w *Wal) LoadFromFile(path string) *sortTree.Tree{
+func (w *Wal) LoadFromFile(path string) *sortTree.Tree {
 	log.Println("Loading wal.log file...")
 	start := time.Now()
 	defer func() {
@@ -76,15 +72,15 @@ func(w *Wal) LoadFromFile(path string) *sortTree.Tree{
 	w.lock = &sync.Mutex{}
 	return w.LoadToMemory()
 }
-func(w *Wal) LoadToMemory() *sortTree.Tree {
+func (w *Wal) LoadToMemory() *sortTree.Tree {
 	w.lock.Lock()
 	defer w.lock.Unlock()
-	
+
 	preTree := sortTree.NewSortTree()
 	info, _ := os.Stat(w.path)
 	size := info.Size()
 
-	if size == 0 {  //磁盘wal文件为空
+	if size == 0 { //磁盘wal文件为空
 		return preTree
 	}
 
@@ -100,7 +96,7 @@ func(w *Wal) LoadToMemory() *sortTree.Tree {
 			log.Println("Failed to move file'potinter to the end of the wal.log file!")
 			panic(err)
 		}
-	}(w.f, size - 1, 0)
+	}(w.f, size-1, 0)
 
 	data := make([]byte, size)
 	newSize, err := w.f.Read(data)
@@ -121,7 +117,7 @@ func(w *Wal) LoadToMemory() *sortTree.Tree {
 			log.Println("Failed to read per-data's len")
 			panic(err)
 		}
-		
+
 		//利用数据长度，将该条数据读出，并反序列化为kv.Value对象
 		index += 8
 		dataArea := data[index:(index + dataLen)]
@@ -131,8 +127,8 @@ func(w *Wal) LoadToMemory() *sortTree.Tree {
 			panic(err)
 		}
 
-		if value.Deleted {  //越往后面，数据时越新的，就要删除
-			preTree.Delete(value.Key)
+		if value.Isdeleted() { //越往后面，数据时越新的，就要删除
+			preTree.Delete(value.GetKey())
 		} else {
 			preTree.Insert(&value)
 		}
@@ -154,7 +150,7 @@ func (w *Wal) Write(value kv.Value) {
 		panic(err)
 	}
 	//将value序列话后的长度(将长度转为8个字节的int后写入)，写入wal.log中
-	dataLen := len(dataArea) 
+	dataLen := len(dataArea)
 	err = binary.Write(w.f, binary.LittleEndian, int64(dataLen))
 	if err != nil {
 		log.Println("Failed to write value's len")
@@ -167,7 +163,6 @@ func (w *Wal) Write(value kv.Value) {
 		panic(err)
 	}
 }
-
 
 /*
 删除原有的wal.log文件，创建一个新的wal.log文件
@@ -183,12 +178,12 @@ func (w *Wal) Reset() {
 }
 
 /*
-删除log文件
+删除log文件、资源释放
 */
 func (w *Wal) DeleteFile() {
 	w.lock.Lock()
 	defer w.lock.Unlock()
-	log.Println("Deletint wal.log file")
+	log.Println("Deleting wal.log file")
 	err := w.f.Close()
 	if err != nil {
 		log.Println("Failed to close wal.log file")
@@ -200,5 +195,14 @@ func (w *Wal) DeleteFile() {
 		log.Println("Failed to remove wal.log file")
 		panic(err)
 	}
+	w.f = nil
 }
-
+// database退出时，释放资源，但是不需要删除wal.log文件
+func (w *Wal) Clear() {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	if err := w.f.Close(); err != nil {
+		log.Println("Failed to clear wal, file is: ", w.path)
+	}
+	w.f = nil
+}

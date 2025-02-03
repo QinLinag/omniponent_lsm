@@ -18,17 +18,18 @@ type TableTree struct {
 	lock   *sync.RWMutex
 }
 
+//字节为单位
 var levelMaxSize []int
 
 /*
-TableTree初始化模块
+TableTree初始化模块:需要将目录下的所有sstable磁盘文件文件用于初始化sstable，构成一个tableTree
 */
 func NewTableTree() *TableTree {
 	tableTree := TableTree{}
-	tableTree.Init()
+	tableTree.init()
 	return &tableTree
 }
-func (tree *TableTree) Init() {
+func (tree *TableTree) init() {
 	log.Println("The SSTable list are being loaded")
 	conf := config.GetConfig()
 	dir := conf.DataDir
@@ -66,7 +67,7 @@ func (tree *TableTree) Init() {
 	}
 }
 func (tree *TableTree) loadDbFile(dir string, fileName string) {
-	table := NewSSTableFromFile(path.Join(dir, fileName))
+	table := newSSTableFromFile(path.Join(dir, fileName))
 	level, _, err := getLevelAndIndex(fileName)
 	if err != nil {
 		log.Println("Failed to init tableTree, and the diractory is: ", dir)
@@ -91,7 +92,7 @@ func (tree *TableTree) Search(key string) (kv.Value, kv.SearchResult) {
 		}
 		//从最后一个table开始找，
 		for i := len(tables) - 1; i >= 0; i-- {
-			value, result := tables[i].Search(key)
+			value, result := tables[i].search(key)
 			if kv.IsNone(result) { //没找到就下一个table
 				continue
 			}
@@ -113,7 +114,7 @@ func (tree *TableTree) CreateNewTable(values []kv.Value) *SSTable {
 func (tree *TableTree) createTable(values []kv.Value, level int) *SSTable {
 	//返回sstable内存对象
 	index := tree.getMaxIndexFromCertainLevel(level)
-	newSSTable := NewSSTableWithValues(values, level, index+1)
+	newSSTable := newSSTableWithValues(values, level, index+1)
 	//插入tableNode节点
 	tree.insert(newSSTable, level)
 	return newSSTable
@@ -151,20 +152,18 @@ func (tree *TableTree) insert(table *SSTable, level int) int {
 func (tree *TableTree) Check() {
 	tree.majorCompaction()
 }
-
 // 循环便利每一层，判断是否需要压缩
 func (tree *TableTree) majorCompaction() {
 	tree.lock.Lock()
 	defer tree.lock.Unlock()
 	con := config.GetConfig()
 	for level := range tree.levels {
-		tablesSize := int(tree.getLevelSize(level) / 1000 / 1000) //mb
+		tablesSize := int(tree.getLevelSize(level) / 1024 / 1024) //mb
 		if tree.getCountFromCertainLevel(level) > con.PartSize || tablesSize > levelMaxSize[level] {
 			tree.compactionCertainLevel(level)
 		}
 	}
 }
-
 // 对某一层进行压缩：基本思路，将某一层的sstable磁盘文件加载到内存，构成一颗sortTree，然后将sortTree转化为sstable，插入下一层
 func (tree *TableTree) compactionCertainLevel(level int) {
 	log.Println("Compressing start,level: ", level)
@@ -231,14 +230,22 @@ func (tree *TableTree) compactionCertainLevel(level int) {
 	}
 }
 
+
 /*
 清理模块、资源释放
 */
-//清理整个tableTree
-func (tree *TableTree) clear() {
+//清理整个tableTree:sstable文件关闭、资源释放
+func (tree *TableTree) Clear() {
 	tree.lock.Lock()
 	defer tree.lock.Unlock()
-
+	tree.lock = nil
+	for _, node := range tree.levels {
+		for node != nil {
+			tempNode := node
+			tempNode.table.clear()
+			node = node.next
+		}
+	}
 }
 // 重置某个tableNode及其以后node节点（删除node、sstable、磁盘文件）
 func (tree *TableTree) clearLevel(node *tableNode) {

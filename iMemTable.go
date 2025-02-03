@@ -43,8 +43,8 @@ func (rTable *ReadOnlyMemTable) Init(dir string) {
 			tree := preWal.LoadFromFile(fileName)
 			table := MemTable{
 				MemoryTree: tree,
-				Wal: preWal,
-				lock: &sync.RWMutex{},
+				Wal:        preWal,
+				lock:       &sync.RWMutex{},
 			}
 			rTable.Insert(&table)
 		}
@@ -73,7 +73,6 @@ func (rTable *ReadOnlyMemTable) Search(key string) (kv.Value, kv.SearchResult) {
 /*
 只读内存表，转化为一个sstable
 */
-
 
 /*
 功能性模块

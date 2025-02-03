@@ -14,21 +14,19 @@ import (
 )
 
 type SSTable struct {
-	f        *os.File
+	//文件描述符
+	f *os.File
+	//磁盘文件名
 	filePath string
-
-	tableMetaInfo MetaInfo
-
-	//稀疏索引列表   在内存中
+	//sstable磁盘文件元信息
+	tableMetaInfo *MetaInfo
+	//sstable磁盘文件索引列表
 	sparseIndex map[string]Position
-
-	//内存中排序的key
+	//内存中排序的key（可不用）
 	sortIndex []string
-
-	//sstable 虽然不需要修改，但是有合并的过程，所以需要加锁
+	//sstable 虽然没有写操作，但是有sstable合并的过程、释放过程等，所以需要加锁
 	lock *sync.RWMutex
 }
-
 
 /*
 功能接口模块
@@ -45,11 +43,10 @@ func (table *SSTable) getSSTableSize() int64 {
 	return info.Size()
 }
 
-
 /*
-磁盘sstable文件信息加载如内存sstable对象模块
+利用磁盘sstable文件，创建sstable对象（tableTree初始化）
 */
-func NewSSTableFromFile(path string) *SSTable{
+func newSSTableFromFile(path string) *SSTable {
 	table := SSTable{}
 	table.Init(path)
 	return &table
@@ -146,11 +143,85 @@ func loadMetainfoHandler(err error, file string) {
 }
 
 
+
+/*
+内存只读表中的一颗树，转化为sstable，并将values写入sstable磁盘文件
+*/
+func newSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
+	//文件数据准备（序列化数据区、索引数据、元数据）
+	values_bytes := make([]byte, 0)
+	positions := make(map[string]Position)
+	keys := make([]string, 0)
+	dataLen := int64(0)
+	for _, value := range values {
+		bytes, err := kv.Encode(value)
+		if err != nil {
+			log.Println("Failed to insert key: ", value.GetKey())
+			continue
+		}
+		keys = append(keys, value.GetKey())
+		position := Position{
+			Start:   dataLen,
+			Len:     int64(len(bytes)),
+			Deleted: value.Isdeleted(),
+		}
+		positions[value.GetKey()] = position
+		values_bytes = append(values_bytes, bytes...)
+		dataLen += int64(len(bytes))
+	}
+	sort.Strings(keys)
+	positions_bytes, err := json.Marshal(positions)
+	if err != nil {
+		newSSTableWithValuesErrHandler(err)
+	}
+
+	meta := newMetaInfo(0, 0, dataLen, dataLen, int64(len(positions_bytes)))
+
+	//创建文件，并且写入数据   其中呢数据区、索引区数据直接序列化写入，元数据区通过二进制写入
+	filePath := config.GetConfig().DataDir + "/" + strconv.Itoa(level) + "." + strconv.Itoa(index) + ".db"
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		newSSTableWithValuesErrHandler(err)
+	}
+
+	_, err = f.Write(values_bytes)
+	if err != nil {
+		newSSTableWithValuesErrHandler(err)
+	}
+	_, err = f.Write(positions_bytes)
+	if err != nil {
+		newSSTableWithValuesErrHandler(err)
+	}
+	binary.Write(f, binary.LittleEndian, &meta.version)
+	binary.Write(f, binary.LittleEndian, &meta.dataStart)
+	binary.Write(f, binary.LittleEndian, &meta.dataLen)
+	binary.Write(f, binary.LittleEndian, &meta.indexStart)
+	binary.Write(f, binary.LittleEndian, &meta.indexLen)
+	err = f.Sync()
+	if err != nil {
+		newSSTableWithValuesErrHandler(err)
+	}
+	newSSTable := SSTable{
+		f:             f,
+		tableMetaInfo: meta,
+		filePath:      filePath,
+		sparseIndex:   positions,
+		sortIndex:     keys,
+		lock:          &sync.RWMutex{},
+	}
+	return &newSSTable
+}
+func newSSTableWithValuesErrHandler(err error) {
+	log.Println("Failed to NewSSTable!")
+	panic(err)
+}
+
+
 /*
 搜索sstable模块
 */
 // 从sstable中找到 kv.value对象
-func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
+func (table *SSTable) search(key string) (kv.Value, kv.SearchResult) {
 	table.lock.RLock()
 	defer table.lock.RUnlock()
 
@@ -166,98 +237,41 @@ func (table *SSTable) Search(key string) (kv.Value, kv.SearchResult) {
 	bytes := make([]byte, position.Len)
 	_, err := table.f.Seek(position.Start, 0)
 	if err != nil {
-		NewSSTableWithValuesErrHandler(err)
+		newSSTableWithValuesErrHandler(err)
 	}
 
 	_, err = table.f.Read(bytes)
 	if err != nil {
-		NewSSTableWithValuesErrHandler(err)
+		newSSTableWithValuesErrHandler(err)
 	}
 
 	value, err := kv.Decode(bytes)
 	if err != nil {
-		NewSSTableWithValuesErrHandler(err)
+		newSSTableWithValuesErrHandler(err)
 	}
 	return value, kv.Success
 }
 
 
-
 /*
-创建sstable并写入磁盘文件模块
+资源释放
 */
-// 根据values创建一个新的sstable内存对象以及磁盘文件
-func NewSSTableWithValues(values []kv.Value, level int, index int) *SSTable {
-	//文件数据准备（序列化数据区、索引数据、元数据）
-	values_bytes := make([]byte, 0)
-	positions := make(map[string]Position)
-	keys := make([]string, 0)
-	dataLen := int64(0)
-	for _, value := range values {
-		bytes, err := kv.Encode(value)
-		if err != nil {
-			log.Println("Failed to insert key: ", value.Key)
-			continue
-		}
-		keys = append(keys, value.Key)
-		position := Position{
-			Start:   dataLen,
-			Len:     int64(len(bytes)),
-			Deleted: value.Deleted,
-		}
-		positions[value.Key] = position
-		values_bytes = append(values_bytes, bytes...)
-		dataLen += int64(len(bytes))
-	}
-	sort.Strings(keys)
-	positions_bytes, err := json.Marshal(positions)
-	if err != nil {
-		NewSSTableWithValuesErrHandler(err)
-	}
+func (table *SSTable) clear() {
+	table.lock.Lock()
+	defer table.lock.Unlock()
 
-	meta := MetaInfo{ //meta不需要序列化，字节binary写入
-		version:    0,
-		dataStart:  0,
-		dataLen:    dataLen,
-		indexStart: dataLen,
-		indexLen:   int64(len(positions_bytes)),
+	//文件关闭
+	if err := table.f.Close(); err != nil {
+		log.Println("Failed to clear sstable, and the sstable file is: ", table.filePath)
+		//todo
 	}
-
-	//创建文件，并且写入数据   其中呢数据区、索引区数据直接序列化写入，元数据区通过二进制写入
-	filePath := config.GetConfig().DataDir + "/" + strconv.Itoa(level) + "." + strconv.Itoa(index) + ".db"
-	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		NewSSTableWithValuesErrHandler(err)
+	table.f = nil
+	table.sortIndex = table.sortIndex[:0]
+	table.sortIndex = nil
+	for k := range table.sparseIndex {
+		delete(table.sparseIndex, k)
 	}
-
-	_, err = f.Write(values_bytes)
-	if err != nil {
-		NewSSTableWithValuesErrHandler(err)
-	}
-	_, err = f.Write(positions_bytes)
-	if err != nil {
-		NewSSTableWithValuesErrHandler(err)
-	}
-	binary.Write(f, binary.LittleEndian, &meta.version)
-	binary.Write(f, binary.LittleEndian, &meta.dataStart)
-	binary.Write(f, binary.LittleEndian, &meta.dataLen)
-	binary.Write(f, binary.LittleEndian, &meta.indexStart)
-	binary.Write(f, binary.LittleEndian, &meta.indexLen)
-	err = f.Sync()
-	if err != nil {
-		NewSSTableWithValuesErrHandler(err)
-	}
-	newSSTable := SSTable{
-		f:             f,
-		tableMetaInfo: meta,
-		filePath:      filePath,
-		sparseIndex:   positions,
-		sortIndex:     keys,
-		lock:          &sync.RWMutex{},
-	}
-	return &newSSTable
+	table.sparseIndex = nil
+	table.tableMetaInfo = nil
 }
-func NewSSTableWithValuesErrHandler(err error) {
-	log.Println("Failed to NewSSTable!")
-	panic(err)
-}
+

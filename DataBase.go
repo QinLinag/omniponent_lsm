@@ -10,26 +10,39 @@ import (
 	"github.com/QinLinag/omniponent_lsm/ssTable"
 )
 
-
 type Database struct {
+	//内存二叉排序树
 	MemTable *MemTable
+	//内存只读表
 	iMemTable *ReadOnlyMemTable
-	TableTree * ssTable.TableTree
-	ctx context.Context
+	//sstable磁盘文件树
+	TableTree *ssTable.TableTree
+	//控制子协程的上下文、以及cancel函数
+	ctx       context.Context
 	cancelFun context.CancelFunc
 }
 
-//全局唯一实例
+// lsm全局唯一实例
 var database *Database
-
 
 /*
 全局暂停
 */
 func Stop() {
-	
+
 	//子协程结束
 	database.cancelFun()
+	//资源释放
+	database.MemTable.Clear()
+	database.TableTree.Clear()
+
+	//将只读内存表中数据写入磁盘
+	for database.iMemTable.GetLen() != 0 { //一次性将所有的只读内存tree数据持久化为sstable
+		table := database.iMemTable.GetAndDeleteTable()
+		values := table.MemoryTree.GetValues()
+		database.TableTree.CreateNewTable(values)
+		table.Wal.DeleteFile()
+	}
 }
 
 /*
@@ -58,18 +71,17 @@ func initDatabase() {
 	// 如果目录不存在，则为空数据库
 	if _, err := os.Stat(dir); err != nil {
 		log.Printf("The %s directory does not exist. The directory is being created\r\n", dir)
-		err := os.MkdirAll(dir, 0700)//创建一个目录
+		err := os.MkdirAll(dir, 0700) //创建一个目录
 		if err != nil {
 			log.Println("Failed to create the database directory")
 			panic(err)
 		}
 	}
-
 	//初始化database，并且加载文件
 	log.Println("Loading files...")
 	ctx, cancelFun := context.WithCancel(context.Background())
 	database = &Database{
-		ctx: ctx,
+		ctx:       ctx,
 		cancelFun: cancelFun,
 	}
 	//初始化database，并加载数据
@@ -81,7 +93,11 @@ func initDatabase() {
 /*
 内存树转化为只读
 */
-func (d *Database) Swap(){
+func (d *Database) swap() {
 	table := d.MemTable.Swap()
 	d.iMemTable.Insert(table)
 }
+
+/*
+database对外开放的接口
+*/

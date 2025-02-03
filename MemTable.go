@@ -10,14 +10,13 @@ import (
 	"github.com/QinLinag/omniponent_lsm/wal"
 )
 
-//内存表
+// 内存表
 type MemTable struct {
 	MemoryTree *sortTree.Tree
 	//wal文件句柄
-	Wal *wal.Wal
+	Wal  *wal.Wal
 	lock *sync.RWMutex
 }
-
 
 /*
 database启动时，初始化内存表。
@@ -35,7 +34,6 @@ func (table *MemTable) Init(dir string) {
 	table.Wal = wal.NewWal(table.MemoryTree)
 }
 
-
 /*
 内存二叉树转化为只读内存树,并且reset原来的内存树
 */
@@ -46,15 +44,12 @@ func (table *MemTable) Swap() *MemTable {
 	newTree := table.MemoryTree.Swap()
 	newTable := MemTable{
 		MemoryTree: newTree,
-		Wal: table.Wal,
-		lock: &sync.RWMutex{},
+		Wal:        table.Wal,
+		lock:       &sync.RWMutex{},
 	}
 	table.Wal = wal.NewWal(tree)
 	return &newTable
 }
-
-
-
 
 /*
 增删查功能接口
@@ -69,21 +64,27 @@ func (table *MemTable) Delete(key string) (kv.Value, bool) {
 	}
 	return value, success
 }
-func(table *MemTable) Insert(key string, value []byte) (kv.Value, bool) {
+func (table *MemTable) Insert(key string, value []byte) (kv.Value, bool) {
 	table.lock.RLock()
 	defer table.lock.RUnlock()
-	KV := kv.Value{
-		Key: key,
-		Value: value,
-		Deleted: false,
-	}
+	KV := kv.NewValue(key, value)
 	//写入wal文件中
-	table.Wal.Write(KV)
+	table.Wal.Write(*KV)
 	//插入内存树中
-	return table.MemoryTree.Insert(&KV)
+	return table.MemoryTree.Insert(KV)
 }
-func(table *MemTable) Search(key string) (kv.Value, kv.SearchResult){
+func (table *MemTable) Search(key string) (kv.Value, kv.SearchResult) {
 	table.lock.RLock()
 	defer table.lock.RUnlock()
 	return table.MemoryTree.Search(key)
+}
+
+/*
+资源释放
+*/
+func (table *MemTable) Clear() {
+	table.lock.Lock()
+	defer table.lock.Unlock()
+	table.MemoryTree.Clear()
+	table.Wal.Clear()
 }
