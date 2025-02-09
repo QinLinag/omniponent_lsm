@@ -1,6 +1,6 @@
 package ssTable
 
-//需要序列化，故必须大写
+// 需要序列化，故必须大写
 type Position struct {
 	//磁盘KV其实地址
 	Start int64

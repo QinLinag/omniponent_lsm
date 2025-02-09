@@ -19,7 +19,7 @@ func TestSortTree(t *testing.T) {
 	//test2
 	for i := 0; i < 10000; i++ {
 		value, _ := kv.Convert[string]("test")
-		key :=  strconv.Itoa(i) + "test"
+		key := strconv.Itoa(i) + "test"
 		_, hasOld := sortTree.Insert(kv.NewValue(key, value))
 		require.Equal(t, false, hasOld)
 	}
@@ -48,7 +48,7 @@ func TestSortTree(t *testing.T) {
 	//test4
 	for i := 1000; i < 5000; i++ {
 		value, _ := kv.Convert[string]("test")
-		key :=  strconv.Itoa(i) + "test"
+		key := strconv.Itoa(i) + "test"
 		sortTree.Insert(kv.NewValue(key, value))
 	}
 	require.Equal(t, 10000, sortTree.GetCount())
@@ -62,7 +62,7 @@ func TestSortTree(t *testing.T) {
 	//test5
 	for i := 0; i < 10000; i++ {
 		value, _ := kv.Convert[string]("test-1")
-		key :=  strconv.Itoa(i) + "test"
+		key := strconv.Itoa(i) + "test"
 		oldKV, hasOld := sortTree.Insert(kv.NewValue(key, value))
 		require.Equal(t, true, hasOld)
 		oldValue, _ := kv.Get[string](&oldKV)

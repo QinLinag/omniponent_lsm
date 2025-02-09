@@ -197,6 +197,7 @@ func (w *Wal) DeleteFile() {
 	}
 	w.f = nil
 }
+
 // database退出时，释放资源，但是不需要删除wal.log文件
 func (w *Wal) Clear() {
 	w.lock.Lock()

@@ -18,7 +18,7 @@ type TableTree struct {
 	lock   *sync.RWMutex
 }
 
-//字节为单位
+// 字节为单位
 var levelMaxSize []int
 
 /*
@@ -152,6 +152,7 @@ func (tree *TableTree) insert(table *SSTable, level int) int {
 func (tree *TableTree) Check() {
 	tree.majorCompaction()
 }
+
 // 循环便利每一层，判断是否需要压缩
 func (tree *TableTree) majorCompaction() {
 	tree.lock.Lock()
@@ -164,6 +165,7 @@ func (tree *TableTree) majorCompaction() {
 		}
 	}
 }
+
 // 对某一层进行压缩：基本思路，将某一层的sstable磁盘文件加载到内存，构成一颗sortTree，然后将sortTree转化为sstable，插入下一层
 func (tree *TableTree) compactionCertainLevel(level int) {
 	log.Println("Compressing start,level: ", level)
@@ -230,7 +232,6 @@ func (tree *TableTree) compactionCertainLevel(level int) {
 	}
 }
 
-
 /*
 清理模块、资源释放
 */
@@ -247,6 +248,7 @@ func (tree *TableTree) Clear() {
 		}
 	}
 }
+
 // 重置某个tableNode及其以后node节点（删除node、sstable、磁盘文件）
 func (tree *TableTree) clearLevel(node *tableNode) {
 	tree.lock.Lock()

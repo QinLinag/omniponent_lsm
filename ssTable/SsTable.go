@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"sync"
 
-	config "github.com/QinLinag/omniponent_lsm/Config"
+	config "github.com/QinLinag/omniponent_lsm/config"
 	"github.com/QinLinag/omniponent_lsm/kv"
 )
 
@@ -142,8 +142,6 @@ func loadMetainfoHandler(err error, file string) {
 	panic(err)
 }
 
-
-
 /*
 内存只读表中的一颗树，转化为sstable，并将values写入sstable磁盘文件
 */
@@ -216,7 +214,6 @@ func newSSTableWithValuesErrHandler(err error) {
 	panic(err)
 }
 
-
 /*
 搜索sstable模块
 */
@@ -252,7 +249,6 @@ func (table *SSTable) search(key string) (kv.Value, kv.SearchResult) {
 	return value, kv.Success
 }
 
-
 /*
 资源释放
 */
@@ -274,4 +270,3 @@ func (table *SSTable) clear() {
 	table.sparseIndex = nil
 	table.tableMetaInfo = nil
 }
-

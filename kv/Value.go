@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 )
 
-
 // kv 需要序列化，故必须大写
 type Value struct {
 	Key     string
@@ -13,34 +12,34 @@ type Value struct {
 }
 
 type SearchResult int
+
 const (
 	None SearchResult = iota
 	Deleted
 	Success
 )
-func Isdeleted(result SearchResult) bool{
+
+func Isdeleted(result SearchResult) bool {
 	return result == Deleted
 }
-func IsSuccess(result SearchResult) bool{
+func IsSuccess(result SearchResult) bool {
 	return result == Success
 }
-func IsNone(result SearchResult) bool{
+func IsNone(result SearchResult) bool {
 	return result == None
 }
-
 
 /*
 初始化模块
 */
 func NewValue(key string, value []byte) *Value {
 	newValue := Value{
-		Key: key,
-		Value: value,
+		Key:     key,
+		Value:   value,
 		Deleted: false,
 	}
 	return &newValue
 }
-
 
 /*
 功能性模块
@@ -53,7 +52,7 @@ func (v *Value) GetKey() string {
 }
 func (v *Value) GetValue() []byte {
 	return v.Value
-} 
+}
 func (v *Value) SetValue(value []byte) {
 	v.Value = value
 }
@@ -70,7 +69,6 @@ func (v *Value) Copy() *Value {
 		Deleted: v.Deleted,
 	}
 }
-
 
 /*
 序列化与反序列化模块

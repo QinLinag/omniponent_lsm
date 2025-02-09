@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStack(t *testing.T) {   //跑测试需要去修改Value结构体，要暴露字段
+func TestStack(t *testing.T) { //跑测试需要去修改Value结构体，要暴露字段
 	stack := InitialStack(100)
 	require.Equal(t, 100, len(stack.stack), "initial stack's len should be 100")
 	require.Equal(t, -1, stack.top, "stack's member should be zero")
@@ -18,7 +18,7 @@ func TestStack(t *testing.T) {   //跑测试需要去修改Value结构体，要�
 		key := strconv.Itoa(i) + "test"
 		stack.Push(&treeNode{
 			kv: kv.NewValue(key, value_bytes),
-			},)
+		})
 	}
 	require.Equal(t, 49, stack.top)
 
@@ -41,7 +41,7 @@ func TestStack(t *testing.T) {   //跑测试需要去修改Value结构体，要�
 		key := strconv.Itoa(i) + "test"
 		stack.Push(&treeNode{
 			kv: kv.NewValue(key, value_bytes),
-			},)
+		})
 	}
 	require.Equal(t, 199, stack.top)
 
